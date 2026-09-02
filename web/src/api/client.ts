@@ -1,4 +1,14 @@
 const BASE = '/api';
+const TOKEN_KEY = 'minitrek_session';
+
+export function getSessionToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setSessionToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
 
 interface ApiOptions {
   method?: string;
@@ -6,11 +16,28 @@ interface ApiOptions {
 }
 
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const token = getSessionToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch(BASE + path, {
     method: options.method || 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401) {
+    const err = await res.json().catch(() => ({}));
+    const msg = (err as { error?: string }).error || '未登录或会话已过期';
+    // 登录接口的 401 表示密码错误，不当作会话失效处理
+    if (path === '/auth/login') {
+      throw new Error(msg);
+    }
+    setSessionToken(null);
+    if (!location.pathname.startsWith('/login')) {
+      location.href = '/login';
+    }
+    throw new Error(msg);
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || `请求失败 (${res.status})`);
@@ -77,6 +104,13 @@ export interface ActivityInput {
 }
 
 export const api = {
+  // 登录 / 认证
+  login: (password: string) => request<{ ok: boolean; token: string }>('/auth/login', { method: 'POST', body: { password } }),
+  logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST', body: {} }),
+  getAuthMe: () => request<{ authed: boolean; passwordConfigured: boolean }>('/auth/me'),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: { oldPassword, newPassword } }),
+
   listTrips: () => request<Trip[]>('/trips'),
   getTrip: (id: string) => request<Trip>(`/trips/${id}`),
   createTrip: (data: {

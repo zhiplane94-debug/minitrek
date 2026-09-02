@@ -79,6 +79,54 @@
           </button>
         </div>
       </div>
+
+      <div class="card">
+        <h2>账号与安全</h2>
+
+        <div class="field">
+          <label>修改登录密码</label>
+          <input type="password" v-model="pwOld" placeholder="原密码" autocomplete="current-password" />
+          <input class="gap-top" type="password" v-model="pwNew" placeholder="新密码（至少 6 位）" autocomplete="new-password" />
+          <input class="gap-top" type="password" v-model="pwConfirm" placeholder="确认新密码" autocomplete="new-password" />
+          <p class="hint-text">
+            初始密码为部署时设置的
+            <code>MINITREK_ADMIN_PASSWORD</code>（Docker/.env）。
+            修改后写入本地数据库，无需改动 .env。
+          </p>
+          <div class="status" v-if="pwSaved">✓ 密码已修改</div>
+          <div class="status error" v-if="pwError">{{ pwError }}</div>
+          <div class="actions-inline">
+            <button class="btn btn-sm" :disabled="pwSaving" @click="onChangePassword">
+              {{ pwSaving ? '修改中…' : '修改密码' }}
+            </button>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="field">
+          <label>恢复密码（忘记密码时）</label>
+          <p class="hint-text">
+            在服务器 / NAS 上执行以下命令重置管理员密码：
+          </p>
+          <pre class="cmd-box">docker exec -it minitrek node --import tsx \
+  src/scripts/reset-password.ts</pre>
+          <p class="hint-text">
+            不传参数会生成随机新密码并打印；也可在后面跟一个 6 位以上新密码。
+            重置后写入数据库，所有旧登录会话立即失效，请用新密码重新登录。
+          </p>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="field">
+          <label>退出登录</label>
+          <p class="hint-text">清除当前浏览器登录状态。</p>
+          <div class="actions-inline">
+            <button class="btn btn-sm btn-danger" @click="onLogout">退出登录</button>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -86,7 +134,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { api } from '../api/client';
+import { api, setSessionToken } from '../api/client';
 
 const router = useRouter();
 const amapKey = ref('');
@@ -99,6 +147,12 @@ const tokenInfo = ref<{ label: string | null; createdAt: string | null } | null>
 const newToken = ref('');
 const tokenNote = ref('');
 const generating = ref(false);
+const pwOld = ref('');
+const pwNew = ref('');
+const pwConfirm = ref('');
+const pwSaving = ref(false);
+const pwSaved = ref(false);
+const pwError = ref('');
 
 function fmtTime(iso: string | null): string {
   if (!iso) return '-';
@@ -164,6 +218,42 @@ async function onSave() {
   } finally {
     saving.value = false;
   }
+}
+
+async function onChangePassword() {
+  pwError.value = '';
+  pwSaved.value = false;
+  if (pwNew.value.length < 6) {
+    pwError.value = '新密码至少 6 位';
+    return;
+  }
+  if (pwNew.value !== pwConfirm.value) {
+    pwError.value = '两次输入的新密码不一致';
+    return;
+  }
+  pwSaving.value = true;
+  try {
+    await api.changePassword(pwOld.value, pwNew.value);
+    pwSaved.value = true;
+    pwOld.value = '';
+    pwNew.value = '';
+    pwConfirm.value = '';
+    setTimeout(() => (pwSaved.value = false), 2000);
+  } catch (e) {
+    pwError.value = (e as Error).message;
+  } finally {
+    pwSaving.value = false;
+  }
+}
+
+async function onLogout() {
+  try {
+    await api.logout();
+  } catch {
+    /* 忽略登出接口错误 */
+  }
+  setSessionToken(null);
+  router.push('/login');
 }
 </script>
 
@@ -289,6 +379,18 @@ async function onSave() {
 }
 .actions-inline {
   margin-top: 10px;
+}
+.gap-top {
+  margin-top: 8px;
+}
+.cmd-box {
+  background: #f1f3f5;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 code {
   background: #eef1f5;

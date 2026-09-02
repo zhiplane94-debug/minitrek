@@ -84,3 +84,10 @@ export const settings = sqliteTable('settings', {
   value: text('value'),
   updatedAt: text('updated_at').notNull(),
 });
+
+/** Web 登录会话（登录后签发，用于 REST API 鉴权） */
+export const sessions = sqliteTable('sessions', {
+  tokenHash: text('token_hash').primaryKey(),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+});

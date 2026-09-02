@@ -32,8 +32,21 @@
 | 地址定位 | 节点编辑弹窗「定位」按钮，地址→经纬度 |
 | 分享 | 生成只读链接 `/share/:token`，家人免登录查看 |
 | 设置 | 右上角「我」进入，配置高德 JS Key 与 Web 服务 Key，以及 MCP API Token |
+| 登录与密码管理 | 访问需登录（初始密码=部署时 `MINITREK_ADMIN_PASSWORD`）；设置页可修改密码、恢复密码（命令行重置）、退出登录 |
 | AI 规划配置 | 首页「AI 规划」弹窗：3 步生成 Token → 填地址 → 按客户端导出 MCP 配置 |
 | 导入/导出 | 详情页「导出」下载行程 .md；「导入」弹窗支持粘贴/上传/填模板，解析预览后一键导入为新行程 |
+
+## 登录与密码管理
+- **登录**：Web 端所有页面（除只读分享 `/share/:token` 与登录页）需登录后访问，未登录自动跳转登录页。
+- **初始密码**：部署时环境变量 `MINITREK_ADMIN_PASSWORD`（Docker/.env），默认 `changeme`。
+- **修改密码**：右上角「我」→ 设置 → 账号与安全 → 修改登录密码（需原密码，新密码至少 6 位）。修改后写入本地数据库，无需改动 .env。
+- **恢复密码（忘记密码时）**：在服务器/NAS 上执行：
+  ```bash
+  docker exec -it minitrek node --import tsx src/scripts/reset-password.ts
+  ```
+  不传参数自动生成随机新密码并打印；也可在后面跟一个 6 位以上新密码。重置后所有旧登录会话立即失效。
+- **会话**：登录签发随机 Token（30 天有效，哈希存库），浏览器本地保存；「退出登录」即时失效。
+- **与 MCP 的关系**：Web 登录与 MCP 互不影响——AI 客户端继续用 `MINITREK_MCP_TOKEN` / 页面生成的 `mtk_` Token 连接 `/mcp`，无需 Web 登录。
 
 ## MCP Server（AI 规划通道）
 端点 `http://<地址>:8288/mcp`，认证 `Authorization: Bearer <Token>`。
@@ -145,7 +158,8 @@ Stop-Process -Id $p -Force
 
 ```bash
 # 在 NAS 上：把整个项目目录拷入（或用 git），配置 .env
-cp .env.example .env   # 修改 MINITREK_ADMIN_PASSWORD / MINITREK_MCP_TOKEN
+cp .env.example .env   # 修改 MINITREK_ADMIN_PASSWORD（Web 登录初始密码，默认 changeme）
+                       #   与 MINITREK_MCP_TOKEN（AI 客户端连 MCP 用）
                        # 可选：AMAP_KEY / AMAP_WEB_KEY（也可进设置页填）
                        # 建议设置：MINITREK_12306_MCP_URL=http://12306-mcp:8080/mcp（compose 已默认）
 
@@ -153,16 +167,21 @@ cp .env.example .env   # 修改 MINITREK_ADMIN_PASSWORD / MINITREK_MCP_TOKEN
 docker compose up -d --build
 
 # 访问
-#  Web:  http://<NAS-IP>:8288
-#  MCP:  http://<你的DDNS域名或IP>:8288/mcp  （Authorization: Bearer <MINITREK_MCP_TOKEN>）
+#  Web:  http://<NAS-IP>:8288   （首次需用 MINITREK_ADMIN_PASSWORD 登录）
+#  MCP:  http://<你的DDNS域名或IP>:8288/mcp  （Authorization: Bearer <MINITREK_MCP_TOKEN>，无需 Web 登录）
 ```
 > 构建提示：若 `docker pull node:20-slim` 在飞牛镜像加速器偶发 401，重试或直接 `docker pull node:20-slim` 拉取后重建；Dockerfile 已内置 `npm config set registry https://registry.npmmirror.com` 加速依赖安装。
 > MCP 远程访问经 DDNS 暴露，建议在 NAS 反向代理上套 HTTPS。
 > 数据库落在挂载卷 `./data`（服务内 `/app/data`），备份=复制该目录下的 `.db` 文件。
 
 ## 常用 REST API
+> 除 `/api/health`、`/api/auth/login`、`/api/share/:token` 外，`/api/*` 均需登录（`Authorization: Bearer <登录Token>`，登录接口返回）。
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| POST | /api/auth/login | 登录（密码），返回会话 Token |
+| POST | /api/auth/logout | 登出（使当前会话失效） |
+| GET | /api/auth/me | 当前登录态（authed / passwordConfigured） |
+| POST | /api/auth/change-password | 修改登录密码（需原密码，新密码≥6 位） |
 | GET/POST | /api/trips | 行程列表 / 新建 |
 | POST | /api/trips/import | 批量导入行程（Markdown 导入走此接口，一次建行程+天数+节点） |
 | GET/PATCH/DELETE | /api/trips/:id | 详情 / 更新 / 删除 |

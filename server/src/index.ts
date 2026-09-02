@@ -15,7 +15,9 @@ import { shareRoutes } from './routes/share.js';
 import { amapRoutes } from './routes/amap.js';
 import { mcpRoutes } from './mcp/index.js';
 import { mcpTokenRoutes } from './routes/mcp-token.js';
+import { authRoutes } from './routes/auth.js';
 import { db, sqlite } from './db/index.js';
+import { verifySession, extractToken } from './auth.js';
 
 dotenv.config();
 
@@ -31,8 +33,22 @@ const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
 
+// REST 鉴权：除白名单外，/api/* 需 Web 登录会话（MCP 的 /mcp 走自己的 Bearer Token 校验，不受影响）
+app.addHook('preHandler', async (req, reply) => {
+  const url = req.url ?? '';
+  if (!url.startsWith('/api/')) return; // 静态资源与 /mcp 放行
+  if (url === '/api/health') return; // 健康检查
+  if (url.startsWith('/api/auth/login')) return; // 登录本身
+  if (url.startsWith('/api/share/')) return; // 只读分享链接（发给家人/朋友）
+  const token = extractToken(req);
+  if (!(await verifySession(token))) {
+    return reply.code(401).send({ error: '未登录或会话已过期' });
+  }
+});
+
 app.get('/api/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
 
+await app.register(authRoutes, { prefix: '/api' });
 await app.register(tripsRoutes, { prefix: '/api/trips' });
 await app.register(activitiesRoutes, { prefix: '/api' });
 await app.register(settingsRoutes, { prefix: '/api' });

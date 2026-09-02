@@ -19,3 +19,8 @@ mcp.log
 mcp.err.log
 web/vite.log
 web/vite.err.log
+
+nas_deploy_credentials.txt
+deploy_nas.py
+test_nas_mcp.py
+

@@ -125,6 +125,10 @@ mcp_tokens                 MCP API Token（单用户场景可仅一条）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| POST | /api/auth/login | 登录（管理员密码），返回会话 Token |
+| POST | /api/auth/logout | 登出，使当前会话失效 |
+| GET | /api/auth/me | 当前登录态（authed / passwordConfigured） |
+| POST | /api/auth/change-password | 修改登录密码（需原密码，新密码≥6 位） |
 | GET/POST | /api/trips | 行程列表 / 新建行程 |
 | POST | /api/trips/import | 批量导入行程（Markdown 导入走此接口，一次事务创建行程+天数+节点；显式天数优先，否则按日期范围生成空天） |
 | GET/PATCH/DELETE | /api/trips/:id | 详情（含 days/activities）/ 更新 / 删除 |
@@ -236,8 +240,8 @@ Web 编辑操作（手动规划）走 REST；AI 规划走 MCP（二者业务层�
 
 | 面 | 方案 |
 |---|---|
-| Web 管理端 | 单用户，简单账号密码 + Session（或首次访问设置管理员口令） |
-| MCP 端 | API Token，Bearer 认证；Token 由页面生成（`mtk_` 前缀）或环境变量 `MINITREK_MCP_TOKEN` 配置，库中仅存 sha256 哈希 |
+| Web 管理端 | 登录页 + 会话 Token。登录校验：数据库 `settings.admin_password_hash`（scrypt 加盐哈希）优先，未设置时用环境变量 `MINITREK_ADMIN_PASSWORD`（默认 `changeme`）。登录签发随机 32 字节 Token，sha256 哈希存 `sessions` 表（30 天有效），前端 localStorage 保存，REST 请求带 `Authorization: Bearer <token>`。除 `/api/health`、`/api/auth/login`、`/api/share/:token` 外 `/api/*` 全部需登录。忘记密码可用重置脚本（见 8.3） |
+| MCP 端 | API Token，Bearer 认证；Token 由页面生成（`mtk_` 前缀）或环境变量 `MINITREK_MCP_TOKEN` 配置，库中仅存 sha256 哈希；**与 Web 登录互不影响** |
 | 分享链接 | `/share/:token` 随机 token 只读，无登录，可撤销 |
 | 网络安全 | 依赖 NAS 部署环境；如需公网访问建议套 HTTPS 反向代理 |
 | 数据 | SQLite 文件落本地卷；备份即复制文件 |
@@ -268,7 +272,7 @@ services:
       - "8288:8288"
     environment:
       - PORT=8288
-      - MINITREK_ADMIN_PASSWORD=changeme
+      - MINITREK_ADMIN_PASSWORD=changeme   # Web 登录初始密码（修改后写入数据库，不再读此值）
       - MINITREK_MCP_TOKEN=changeme
       - AMAP_KEY=your_amap_js_key        # 可选，也可进设置页填
       - AMAP_WEB_KEY=your_amap_web_key   # 可选，POI 搜索/定位
@@ -289,12 +293,17 @@ services:
 ### 8.3 部署步骤（飞牛 NAS）
 1. 仓库上传到 NAS（或 NAS 上 git clone）。
 2. SSH 到 NAS（或用飞牛应用中心/Docker 面板）执行 `docker compose up -d --build`。
-3. 浏览器访问 `http://<NAS-IP>:8288` 使用 Web。
-4. **MCP 远程访问**：飞牛 NAS 若无公网 IP，通过以下任一方式暴露 `/mcp` 端点：
+3. 浏览器访问 `http://<NAS-IP>:8288`，用 `MINITREK_ADMIN_PASSWORD` 登录（默认 `changeme`，建议登录后在「设置 → 账号与安全」改掉）。
+4. **忘记 Web 登录密码（恢复密码）**：在 NAS 上执行
+   ```bash
+   docker exec -it minitrek node --import tsx src/scripts/reset-password.ts
+   ```
+   不传参数生成随机新密码并打印；也可 `... reset-password.ts 新密码` 指定（≥6 位）。重置后写入数据库，所有旧登录会话失效。
+5. **MCP 远程访问**：飞牛 NAS 若无公网 IP，通过以下任一方式暴露 `/mcp` 端点：
    - 飞牛自带远程访问功能（若支持端口转发）；
    - 内网穿透（frp / Tailscale / ZeroTier）将 NAS 8288 端口映射到可访问地址；
    - 域名 + DDNS + 反向代理（推荐套 HTTPS）。
-5. 在 AI 客户端配置 MCP Server：`http://<可达地址>:8288/mcp`，Header 填 `Authorization: Bearer <Token>`。Token 可：
+6. 在 AI 客户端配置 MCP Server：`http://<可达地址>:8288/mcp`，Header 填 `Authorization: Bearer <Token>`。Token 可：
    - 在 Web 首页「AI 规划」弹窗或设置页「MCP API Token」点击「生成新 Token」自动获取（复制保存），并按所选客户端一键导出配置 JSON；弹窗填地址时会自动补全默认端口 8288（自填端口或 HTTPS 反代则保留）；
    - 或使用部署时设置的 `MINITREK_MCP_TOKEN`。
 
@@ -311,13 +320,12 @@ services:
 | M5 数据源 | 12306 车次、天气自动查询、高德 POI/定位 | 交通/天气/地点查询可用 | ✅ |
 | M6 分享+费用+设置 | 只读链接、费用汇总、设置页 | MVP 完整 | ✅ |
 | M6.5 导入导出 | Markdown 导出/导入（新建行程）+ 往返测试 | 数据可迁移 | ✅ |
-| M7 部署上线 | NAS 部署、MCP 远程联调、备份方案 | 可日常使用 | 待 NAS 实测 |
+| M7 部署上线 | NAS 部署、MCP 远程联调、备份方案 | 可日常使用 | ✅（飞牛 NAS 实测通过） |
+| M7.5 登录认证 | 登录页 + 会话 Token + REST 鉴权；设置页修改/恢复密码；重置脚本 | Web 访问受保护 | ✅ |
 
 ---
 
 ## 10. 待办/风险清单
 
-- [ ] 在飞牛 NAS 上 `docker compose up -d --build` 实测（本机无 Docker，镜像未验证）。
 - [ ] 高德 **Web 服务 Key** 申请并在设置页/环境变量配置（地点搜索与地址定位当前依赖它；JS Key 仅用于地图）。
 - [ ] MCP 远程访问经 DDNS 暴露后的 HTTPS 反向代理配置。
-- [ ] 管理员口令与 MCP Token 的初始生成与配置流程。
