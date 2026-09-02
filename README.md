@@ -141,10 +141,13 @@ Stop-Process -Id $p -Force
 > 部署到飞牛 NAS（Docker）后无需上述操作：`docker compose up -d` 自动常驻、开机自启、崩溃自愈，只需 `docker compose ps` 确认三个服务为 Up。
 
 ## 部署到飞牛 NAS（Docker）
+> ✅ **已在飞牛 fnOS（Docker 28 + Compose v2）实测通过**：`node:20-slim` 基础镜像 + npmmirror 依赖源构建成功，Web / REST / MCP / 12306 代理四端全通。
+
 ```bash
 # 在 NAS 上：把整个项目目录拷入（或用 git），配置 .env
 cp .env.example .env   # 修改 MINITREK_ADMIN_PASSWORD / MINITREK_MCP_TOKEN
                        # 可选：AMAP_KEY / AMAP_WEB_KEY（也可进设置页填）
+                       # 建议设置：MINITREK_12306_MCP_URL=http://12306-mcp:8080/mcp（compose 已默认）
 
 # 构建并启动（含 12306-mcp 内部代理服务）
 docker compose up -d --build
@@ -153,6 +156,7 @@ docker compose up -d --build
 #  Web:  http://<NAS-IP>:8288
 #  MCP:  http://<你的DDNS域名或IP>:8288/mcp  （Authorization: Bearer <MINITREK_MCP_TOKEN>）
 ```
+> 构建提示：若 `docker pull node:20-slim` 在飞牛镜像加速器偶发 401，重试或直接 `docker pull node:20-slim` 拉取后重建；Dockerfile 已内置 `npm config set registry https://registry.npmmirror.com` 加速依赖安装。
 > MCP 远程访问经 DDNS 暴露，建议在 NAS 反向代理上套 HTTPS。
 > 数据库落在挂载卷 `./data`（服务内 `/app/data`），备份=复制该目录下的 `.db` 文件。
 
