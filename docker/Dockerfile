@@ -2,7 +2,7 @@
 FROM node:20-slim AS web-build
 WORKDIR /build/web
 COPY web/package.json ./
-RUN npm install
+RUN npm config set registry https://registry.npmmirror.com && npm install
 COPY web/ ./
 RUN npm run build
 
@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:20-slim AS server
 WORKDIR /app
 COPY server/package.json ./
-RUN npm install
+RUN npm config set registry https://registry.npmmirror.com && npm install
 COPY server/ ./
 
 # ---- 阶段3：运行时（合并前端产物 + 后端） ----
