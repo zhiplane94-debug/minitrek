@@ -1,0 +1,33 @@
+services:
+  minitrek:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: minitrek
+    ports:
+      - "8288:8288"
+    environment:
+      - PORT=8288
+      # 管理端口令与 MCP Token 建议在部署时通过 .env 覆盖
+      - MINITREK_ADMIN_PASSWORD=${MINITREK_ADMIN_PASSWORD:-changeme}
+      - MINITREK_MCP_TOKEN=${MINITREK_MCP_TOKEN:-changeme}
+      - AMAP_KEY=${AMAP_KEY:-}
+      - AMAP_WEB_KEY=${AMAP_WEB_KEY:-}
+      # 12306 车票查询代理服务地址（compose 内网）
+      - MINITREK_12306_MCP_URL=http://12306-mcp:8080/mcp
+      # 数据库落在挂载卷 /app/data，随 NAS 持久化
+      - DATA_DIR=/app/data
+    volumes:
+      # SQLite 数据持久化到 NAS 存储
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # 12306 车票查询 MCP 服务（https://github.com/Joooook/12306-mcp）
+  # 仅绑定本机回环地址，由 minitrek 后端在内部调用，不对外暴露
+  12306-mcp:
+    image: node:20-alpine
+    container_name: minitrek-12306-mcp
+    command: ["sh", "-c", "npx -y 12306-mcp --port 8080"]
+    ports:
+      - "127.0.0.1:9999:8080"
+    restart: unless-stopped

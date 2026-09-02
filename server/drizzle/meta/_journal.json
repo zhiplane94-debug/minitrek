@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788183937473,
+      "tag": "0000_naive_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788184642581,
+      "tag": "0001_fantastic_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788250000000,
+      "tag": "0002_settings",
+      "breakpoints": true
+    }
+  ]
+}

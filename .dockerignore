@@ -1,0 +1,9 @@
+node_modules
+dist
+data
+*.log
+*.db
+.git
+docs
+reference_home.png
+test-body.json
